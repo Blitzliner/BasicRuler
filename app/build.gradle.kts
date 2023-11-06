@@ -11,8 +11,8 @@ android {
         applicationId = "com.maja.basicruler"
         minSdk = 30
         targetSdk = 33
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -65,7 +65,7 @@ dependencies {
     //androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     //androidTestImplementation(platform("androidx.compose:compose-bom:2023.03.00"))
     //androidTestImplementation("androidx.compose.ui:ui-test-junit4")
-    //debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-tooling") // for preview
     //debugImplementation("androidx.compose.ui:ui-test-manifest")
     //implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
 }
