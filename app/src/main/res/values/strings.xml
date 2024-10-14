@@ -2,4 +2,5 @@
     <string name="app_name">BasicRuler</string>
     <string name="correction_factor">com.maja.basicruler.CORRECTION_FACTOR</string>
     <string name="unit">com.maja.basicruler.UNIT</string>
+    <string name="default_unit">cm</string>
 </resources>

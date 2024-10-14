@@ -53,6 +53,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 //import androidx.compose.ui.tooling.preview.Preview
 //import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -66,11 +67,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        var dpi = this.resources.configuration.densityDpi
+        var dpi = this.resources.configuration.densityDpi.takeIf { it != DENSITY_DPI_UNDEFINED } ?: 240
         val tickLength = 30
-        if (dpi == DENSITY_DPI_UNDEFINED) {
-            dpi = 240
-        }
+
         setContent {
             BasicRulerTheme {
                 val context = LocalContext.current
@@ -79,7 +78,7 @@ class MainActivity : ComponentActivity() {
                 val prevCalibration = preferencesManager.getData(keyCalibration, 1f.toString()).toFloat()
                 val currCalibration = remember { mutableStateOf(prevCalibration) }
                 val keyUnit = stringResource(R.string.unit)
-                val prevUnit = preferencesManager.getData(keyUnit, "cm")
+                val prevUnit = preferencesManager.getData(keyUnit, stringResource(R.string.default_unit))
                 val currUnit = remember { mutableStateOf(prevUnit) }
 
                 Surface(modifier = Modifier
@@ -101,26 +100,21 @@ fun DrawTicks(dpi: Int, tickLength: Int = 30, vertical: Boolean = true, factor: 
     val colorTicks = MaterialTheme.colorScheme.background
     val tickLength1 = tickLength * 0.7f
     val tickLength5 = tickLength * 0.8f
-    val unitDist = if (unit.value == "cm") 2.54f else 1f
+    val unitDist = if (unit.value ==  stringResource(R.string.default_unit)) 2.54f else 1f
+    val mm = dpi.toFloat() * (1f / unitDist) / 10f * factor.value
 
     Canvas(modifier = Modifier.fillMaxWidth()) {
         val strokeWidthMain = (tickLength / 20).dp.toPx()
         val strokeWidthIntermediate = (tickLength / 30).dp.toPx()
-        val rectWidth = (tickLength*2.5f).dp.toPx()
-        val mm = dpi.toFloat() * (1f / unitDist) / 10f * factor.value
+        val rectWidth = (tickLength * 2.5f).dp.toPx()
         val mmNum = if (vertical) (size.height / mm).toInt() else (size.width / mm).toInt()
         val offsetX = 0f
-        var rect = Size(width = rectWidth, height = size.height)
-
-        if (!vertical) {
-            rect = Size(width = size.width, height = rectWidth)
-        }
+        var rect = if (vertical) Size(width = rectWidth, height = size.height) else Size(width = size.width, height = rectWidth)
 
         drawRect(color = colorRect, size = rect)
 
         for (distance in 0..mmNum) {
-            val y = mm*distance + offset
-            var start = Offset(x = offsetX, y = y)
+            val y = mm * distance + offset
             var endX = offsetX + tickLength1.dp.toPx()
             var stroke = strokeWidthIntermediate
 
@@ -132,6 +126,7 @@ fun DrawTicks(dpi: Int, tickLength: Int = 30, vertical: Boolean = true, factor: 
                 stroke = strokeWidthIntermediate
             }
 
+            var start = Offset(x = offsetX, y = y)
             var end = Offset(x = endX, y = y)
             if (!vertical) {
                 end = Offset(x = end.y, y = end.x)
@@ -147,13 +142,12 @@ fun DrawTicks(dpi: Int, tickLength: Int = 30, vertical: Boolean = true, factor: 
 @Composable
 fun DrawLabels(dpi: Int, tickLength: Int = 30, vertical: Boolean = true, factor: MutableState<Float>, unit: MutableState<String>, offset: Float = 10f) {
     val textMeasure = rememberTextMeasurer()
-    val offsetX = tickLength + tickLength/2f
     val color = MaterialTheme.colorScheme.background
     val fontSize = MaterialTheme.typography.bodyLarge.fontSize
-    val unitDist = if (unit.value == "cm") 2.54f else 1f
+    val unitDist = if (unit.value == stringResource(R.string.default_unit)) 2.54f else 1f
+    val conversionFactor = dpi.toFloat() * (1f / unitDist) * factor.value
 
     Canvas(modifier = Modifier.fillMaxWidth()) {
-        val conversionFactor = dpi.toFloat() * (1f / unitDist) * factor.value
         val counter = if (vertical) (size.height / conversionFactor).toInt() else (size.width / conversionFactor).toInt()
 
         for (distance in 0..counter) {
@@ -161,25 +155,17 @@ fun DrawLabels(dpi: Int, tickLength: Int = 30, vertical: Boolean = true, factor:
             val style = TextStyle(fontSize = fontSize, color = color)
             val textLayoutResult = textMeasure.measure(text = text, style = style)
             val textSize = textLayoutResult.size
-
+            val position = if (vertical) {
+                Offset(-textSize.width / 2f + distance * conversionFactor + offset, -textSize.height / 2f - (tickLength * 1.5f).dp.toPx())
+            } else {
+                Offset(distance * conversionFactor + offset - textSize.width / 2f, (1.5f * tickLength).dp.toPx() - 0.5f * textSize.height)
+            }
             if (vertical) {
                 rotate(degrees = 90f, pivot = Offset(x = 0f, y = 0f)) {
-                    drawText(
-                        textLayoutResult = textLayoutResult,
-                        topLeft = Offset(
-                            x = -textSize.width / 2f + distance * conversionFactor + offset,
-                            y = -textSize.height / 2f - offsetX.dp.toPx()
-                        )
-                    )
+                    drawText(textLayoutResult = textLayoutResult, topLeft = position)
                 }
             } else {
-                drawText(
-                    textLayoutResult = textLayoutResult,
-                    topLeft = Offset(
-                        x = distance * conversionFactor + offset - textSize.width / 2f,
-                        y = offsetX.dp.toPx() - textSize.height / 2f
-                    )
-                )
+                drawText(textLayoutResult = textLayoutResult, topLeft = position)
             }
         }
     }
@@ -197,62 +183,46 @@ fun DrawOptions(dpi: Int, factor: MutableState<Float>, unit: MutableState<String
     if (showLinealMeasure.value) {
         ShowLinealMeasure(factor, unit, dpi)
     }
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.End) {
-        var colorLinealMeasure = MaterialTheme.colorScheme.primary
-        var colorSquareMeasure = MaterialTheme.colorScheme.primary
-        if (showLinealMeasure.value)
-            colorLinealMeasure = colorLinealMeasure.copy(0.5f)
-        if (showSquareMeasure.value)
-            colorSquareMeasure = colorSquareMeasure.copy(0.5f)
-        Button(onClick = {
-            showLinealMeasure.value = !showLinealMeasure.value
-            if (showLinealMeasure.value) {
-                showSquareMeasure.value = false
-            }
-                         },
-            modifier = Modifier
-                .padding(10.dp)
-                .size(60.dp),
-            shape = CircleShape,
-            border = null,
-            contentPadding = PaddingValues(0.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = colorLinealMeasure)
-        ) {
-            val measureIcon = ImageVector.vectorResource(id = R.drawable.lineal_meas)
-
-            Icon(measureIcon, contentDescription = "Measure", Modifier.size(40.dp), tint=MaterialTheme.colorScheme.background)
-        }
-        Button(onClick = { showSquareMeasure.value = !showSquareMeasure.value
-            if (showSquareMeasure.value) {
-                showLinealMeasure.value = false
-            }
-                         },
-            modifier = Modifier
-                .padding(10.dp)
-                .size(60.dp),
-            shape = CircleShape,
-            border = null,
-            contentPadding = PaddingValues(0.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = colorSquareMeasure)
-        ) {
-            val measureIcon = ImageVector.vectorResource(id = R.drawable.square_meas)
-
-            Icon(measureIcon, contentDescription = "Measure", Modifier.size(40.dp), tint=MaterialTheme.colorScheme.background)
-        }
-        Button(onClick = { showSetting.value = true },
-            modifier = Modifier
-                .padding(10.dp)
-                .size(60.dp),
-            shape = CircleShape,
-            border = null,
-            contentPadding = PaddingValues(0.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-        ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings", Modifier.size(40.dp), tint=MaterialTheme.colorScheme.background)
-        }
-    }
     if (showSetting.value) {
         ShowSettingDialog(factor, unit, showSetting, dpi)
+    }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.End) {
+        MeasureButton(
+            imageVector = ImageVector.vectorResource(id = R.drawable.lineal_meas),
+            isSelected = showLinealMeasure.value,
+            onClick = {
+                showLinealMeasure.value = !showLinealMeasure.value
+                showSquareMeasure.value = false
+            }
+        )
+        MeasureButton(
+            imageVector = ImageVector.vectorResource(id = R.drawable.square_meas),
+            isSelected = showSquareMeasure.value,
+            onClick = {
+                showSquareMeasure.value = !showSquareMeasure.value
+                showLinealMeasure.value = false
+            }
+        )
+        MeasureButton(
+            imageVector = Icons.Default.Settings,
+            isSelected = showSetting.value,
+            onClick = { showSetting.value = true }
+        )
+    }
+}
+@Composable
+fun MeasureButton(imageVector: ImageVector, isSelected: Boolean, onClick: () -> Unit) {
+    val buttonColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .padding(10.dp)
+            .size(60.dp),
+        shape = CircleShape,
+        contentPadding = PaddingValues(0.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
+    ) {
+        Icon(imageVector, contentDescription = "Measure", Modifier.size(40.dp), tint = MaterialTheme.colorScheme.background)
     }
 }
 
@@ -260,103 +230,83 @@ fun DrawOptions(dpi: Int, factor: MutableState<Float>, unit: MutableState<String
 @Composable
 private fun ShowMeasure(factor: MutableState<Float>, unit: MutableState<String>, dpi: Int) {
     val color = MaterialTheme.colorScheme.secondary.copy(0.85f)
-    val unitDist = if (unit.value == "cm") 2.54f else 1f
+    val defaultUnit = stringResource(R.string.default_unit)
+    val unitDist = if (unit.value == defaultUnit) 2.54f else 1f
     val offset = dpi.toFloat() * (1f / unitDist) * factor.value
     val offsetY = 10f
     val txtColor = MaterialTheme.colorScheme.primary
-    val measDimension = if (unit.value == "cm") 2f*offset else 1f*offset
-    val dim = remember { mutableStateOf(Size(width = measDimension, height = measDimension)) }
-    val center = remember { mutableStateOf(Offset(x = measDimension + dim.value.width/2f, y = measDimension+offsetY + dim.value.height/2f)) }
+    val measDimension = if (unit.value == defaultUnit) 2f * offset else offset
+    val dim = remember { mutableStateOf(Size(measDimension, measDimension)) }
+    val center = remember { mutableStateOf(Offset(measDimension + 0.5f * dim.value.width, measDimension + offsetY + 0.5f * dim.value.height)) }
     val textMeasure = rememberTextMeasurer()
     val fontSize = MaterialTheme.typography.labelLarge.fontSize
 
     Canvas(modifier = Modifier
         .fillMaxSize()
-        .pointerInput(key1 = Unit) {
-            detectDragGestures(
-                onDrag = { change, delta ->
-                    val currPos = change.position
-                    // check for close center this enables drag&drop
-                    val radius = sqrt(
-                        (center.value.x - currPos.x).pow(2) + (center.value.y - currPos.y).pow(2)
-                    )
-                    if (radius < min(100f, (dim.value.width + dim.value.height) / 2f)) {
-                        center.value =
-                            Offset(x = center.value.x + delta.x, y = center.value.y + delta.y)
-                    } else if (abs(delta.x) > abs(delta.y)) { // movement is in x-direction
-                        // resize rectangle on the right side
-                        if (currPos.x > center.value.x) {
-                            center.value =
-                                Offset(x = center.value.x + delta.x / 2f, y = center.value.y)
-                            dim.value =
-                                Size(width = dim.value.width + delta.x, height = dim.value.height)
-                        } else { // resize rectangle on the left side
-                            center.value =
-                                Offset(x = center.value.x + delta.x / 2f, y = center.value.y)
-                            dim.value =
-                                Size(width = dim.value.width - delta.x, height = dim.value.height)
-                        }
-                    } else { // movement is in y direction
-                        // resize rectangle on top side
-                        if (currPos.y < center.value.y) {
-                            center.value =
-                                Offset(x = center.value.x, y = center.value.y + delta.y / 2f)
-                            dim.value =
-                                Size(width = dim.value.width, height = dim.value.height - delta.y)
-                        } else {
-                            // resize rectangle on bottom side
-                            center.value =
-                                Offset(x = center.value.x, y = center.value.y + delta.y / 2f)
-                            dim.value =
-                                Size(width = dim.value.width, height = dim.value.height + delta.y)
-                        }
-                    }
+        .pointerInput(Unit) {
+            detectDragGestures { change, delta ->
+                val currPos = change.position
+                // check for close center this enables drag&drop
+                val radius = sqrt(
+                    (center.value.x - currPos.x).pow(2) + (center.value.y - currPos.y).pow(2)
+                )
+                val resizeThreshold = min(100f, 0.5f * (dim.value.width + dim.value.height))
+
+                if (radius < resizeThreshold) {
+                    center.value += delta
                 }
-            )
+                else if (abs(delta.x) > abs(delta.y)) { // movement is in x-direction
+                    val sign = if (currPos.x > center.value.x) 1.0f else -1.0f
+                    center.value = center.value.copy(x = center.value.x + 0.5f * delta.x)
+                    dim.value = dim.value.copy(width = dim.value.width + sign * delta.x)
+                } else { // movement is in y direction
+                    val sign = if (currPos.y < center.value.y) -1.0f else 1.0f
+                    center.value = center.value.copy(y = center.value.y + 0.5f * delta.y)
+                    dim.value = dim.value.copy(height = dim.value.height + sign * delta.y)
+                }
+            }
         }) {
-        // calc screen limits of rectangle
-        // if negative the rect is overhanging on the right side
-        val dXR = size.width - (center.value.x + dim.value.width/2f)
+        // Calculate the screen limits of the rectangle
+        val dXR = size.width - (center.value.x + dim.value.width / 2f)
+        val dXL = center.value.x - dim.value.width / 2f
+        val dYT = center.value.y - dim.value.height / 2f
+        val dYB = size.height - (center.value.y + dim.value.height / 2f)
+
+        // Adjust position and size to stay within screen bounds
         if (dXR < 0) {
-            center.value = Offset(x = center.value.x - abs(dXR)/2f, y = center.value.y)
-            dim.value = Size(width = dim.value.width - abs(dXR), height = dim.value.height)
+            center.value = center.value.copy(x = center.value.x - abs(dXR) / 2f)
+            dim.value = dim.value.copy(width = dim.value.width - abs(dXR))
         }
-        // if negative the rect is overhanging on the left side
-        val dXL = center.value.x - dim.value.width/2f
         if (dXL < 0) {
-            center.value = Offset(x = center.value.x + abs(dXL)/2f, y = center.value.y)
-            dim.value = Size(width = dim.value.width - abs(dXL), height = dim.value.height)
+            center.value = center.value.copy(x = center.value.x + abs(dXL) / 2f)
+            dim.value = dim.value.copy(width = dim.value.width - abs(dXL))
         }
-        // if negative the rect is overhanging on the top side
-        val dYT = center.value.y - dim.value.height/2f
         if (dYT < 0) {
-            center.value = Offset(x = center.value.x, y = center.value.y + abs(dYT)/2f)
-            dim.value = Size(width = dim.value.width, height = dim.value.height - abs(dYT))
+            center.value = center.value.copy(y = center.value.y + abs(dYT) / 2f)
+            dim.value = dim.value.copy(height = dim.value.height - abs(dYT))
         }
-        // if negative the rect is overhanging on the bottom side
-        val dYB = size.height - (center.value.y + dim.value.height/2f)
         if (dYB < 0) {
-            center.value = Offset(x = center.value.x, y = center.value.y - abs(dYB)/2f)
-            dim.value = Size(width = dim.value.width, height = dim.value.height - abs(dYB))
+            center.value = center.value.copy(y = center.value.y - abs(dYB) / 2f)
+            dim.value = dim.value.copy(height = dim.value.height - abs(dYB))
         }
 
         // draw size of rectangle
-        val w = dim.value.width/offset
-        val h = dim.value.height/offset
-        val style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right)
-        val textLayoutResult = textMeasure.measure(text = String.format("%.2f x %.2f %s\n%.2f %s\u00B2", w, h, unit.value, w*h, unit.value), style = style)
-        val textSize = textLayoutResult.size
+        val w = dim.value.width / offset
+        val h = dim.value.height / offset
+        val textLayoutResult = textMeasure.measure(
+            text = String.format("%.2f x %.2f %s\n%.2f %s\u00B2", w, h, unit.value, w*h, unit.value),
+            style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right))
         drawText(
             textLayoutResult = textLayoutResult,
             topLeft = Offset(
-                x = size.width - textSize.width - 20.dp.toPx(),
+                x = size.width - textLayoutResult.size.width - 20.dp.toPx(),
                 y = 10f
             ),
             color = txtColor
 
         )
         // draw measure rectangle
-        drawRect(color = color, size = dim.value, topLeft = Offset(x = center.value.x - dim.value.width/2f, y = center.value.y - dim.value.height/2f))
+        drawRect(color = color, size = dim.value, topLeft = Offset(center.value.x - 0.5f * dim.value.width, center.value.y - 0.5F * dim.value.height))
     }
 }
 
@@ -364,11 +314,11 @@ private fun ShowMeasure(factor: MutableState<Float>, unit: MutableState<String>,
 @Composable
 private fun ShowLinealMeasure(factor: MutableState<Float>, unit: MutableState<String>, dpi: Int) {
     val color = MaterialTheme.colorScheme.secondary.copy(0.85f)
-    val unitDist = if (unit.value == "cm") 2.54f else 1f
+    val unitDist = if (unit.value == stringResource(R.string.default_unit)) 2.54f else 1f
     val offset = dpi.toFloat() * (1f / unitDist) * factor.value
     val offsetY = 10f
     val txtColor = MaterialTheme.colorScheme.primary
-    val measDimension = if (unit.value == "cm") 2f*offset else 1f*offset
+    val measDimension = if (unit.value == stringResource(R.string.default_unit)) 2f*offset else offset
     val dim = remember { mutableStateOf(Size(width = measDimension, height = measDimension)) }
     val center = remember { mutableStateOf(Offset(x = measDimension + dim.value.width/2f, y = measDimension+offsetY + dim.value.height/2f)) }
     val textMeasure = rememberTextMeasurer()
@@ -386,39 +336,30 @@ private fun ShowLinealMeasure(factor: MutableState<Float>, unit: MutableState<St
                     val currPos = change.position
                     if (abs(delta.x) < abs(delta.y)) { // movement is in y direction
                         // resize rectangle on top side
-                        if (currPos.y < center.value.y) {
-                            center.value =
-                                Offset(x = center.value.x, y = center.value.y + delta.y / 2f)
-                            dim.value =
-                                Size(width = dim.value.width, height = dim.value.height - delta.y)
-                        } else {
-                            // resize rectangle on bottom side
-                            center.value =
-                                Offset(x = center.value.x, y = center.value.y + delta.y / 2f)
-                            dim.value =
-                                Size(width = dim.value.width, height = dim.value.height + delta.y)
-                        }
+                        val sign = if (currPos.y < center.value.y) -1.0f else 1.0f
+                        center.value = center.value.copy(y = center.value.y + 0.5f * delta.y)
+                        dim.value = dim.value.copy(height = dim.value.height + sign * delta.y)
                     }
                 }
             )
         }) {
         // if negative the rect is overhanging on the top side
-        val dYT = center.value.y - dim.value.height/2f
+        val dYT = center.value.y - 0.5f * dim.value.height
         if (dYT < 0) {
             center.value = Offset(x = center.value.x, y = center.value.y + abs(dYT)/2f)
             dim.value = Size(width = dim.value.width, height = dim.value.height - abs(dYT))
         }
         // if negative the rect is overhanging on the bottom side
-        val dYB = size.height - (center.value.y + dim.value.height/2f)
+        val dYB = size.height - (center.value.y + 0.5f * dim.value.height)
         if (dYB < 0) {
             center.value = Offset(x = center.value.x, y = center.value.y - abs(dYB)/2f)
             dim.value = Size(width = dim.value.width, height = dim.value.height - abs(dYB))
         }
 
         // draw size of rectangle
-        val h = dim.value.height/offset
-        val style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right)
-        val textLayoutResult = textMeasure.measure(text = String.format("%.2f %s", h, unit.value), style = style)
+        val textLayoutResult = textMeasure.measure(
+            text = String.format("%.2f %s", dim.value.height / offset, unit.value),
+            style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right))
         val textSize = textLayoutResult.size
         drawText(
             textLayoutResult = textLayoutResult,
@@ -440,7 +381,7 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
     val keyCalibration = stringResource(R.string.correction_factor)
     val keyUnit = stringResource(R.string.unit)
     val prevCalibration = preferencesManager.getData(keyCalibration, 1f.toString()).toFloat()
-    val prevUnit = preferencesManager.getData(keyUnit, "cm")
+    val prevUnit = preferencesManager.getData(keyUnit, stringResource(R.string.default_unit))
     val fontSize = MaterialTheme.typography.bodyLarge.fontSize
     val buttonFontSize = MaterialTheme.typography.labelMedium.fontSize
 
@@ -488,9 +429,9 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
                         .padding(10.dp, 0.dp))
 
                     Switch(
-                        checked = currUnit.value == "cm",
+                        checked = currUnit.value == prevUnit,
                         onCheckedChange = {
-                            currUnit.value = if (it) "cm" else "inch"
+                            currUnit.value = if (it) prevUnit else "inch"
                         }
                     )
                 }
@@ -522,7 +463,7 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
         }
     )
 }
-/*
+
 @Preview(showBackground = true)
 @Composable
 fun RulerPreview() {
@@ -537,4 +478,3 @@ fun RulerPreview() {
         ShowLinealMeasure(factor = factor, unit = unit, dpi = 420)
     }
 }
-*/
