@@ -10,7 +10,7 @@ android {
     defaultConfig {
         applicationId = "com.maja.basicruler"
         minSdk = 30
-        targetSdk = 33
+        targetSdk = 34
         versionCode = 2
         versionName = "1.1"
 
