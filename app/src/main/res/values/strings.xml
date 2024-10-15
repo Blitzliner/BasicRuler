@@ -3,4 +3,5 @@
     <string name="correction_factor">com.maja.basicruler.CORRECTION_FACTOR</string>
     <string name="unit">com.maja.basicruler.UNIT</string>
     <string name="default_unit">cm</string>
+    <string name="default_calibration_value">1.0</string>
 </resources>
