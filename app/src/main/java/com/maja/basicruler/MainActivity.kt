@@ -45,7 +45,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
+//import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -56,7 +56,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
+//import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.maja.basicruler.ui.theme.BasicRulerTheme
 import kotlin.math.abs
@@ -561,7 +561,7 @@ private fun ShowSettingDialog(
     )
 }
 
-@Preview(
+/*@Preview(
     showBackground = true,
     showSystemUi = true,
     device = "spec:width=411dp,height=891dp,dpi=420,isRound=false,chinSize=0dp,orientation=landscape"
@@ -577,4 +577,4 @@ fun RulerPreview() {
         ShowSettingDialog(currFactor = factor, currUnit = unit, dpi = 420, showDialog = showDialog)
         ShowLinealMeasure(factor = factor, unit = unit, dpi = 420)
     }
-}
+}*/
