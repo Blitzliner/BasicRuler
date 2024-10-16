@@ -1,5 +1,6 @@
 package com.maja.basicruler
 
+import android.content.res.Configuration
 import android.content.res.Configuration.DENSITY_DPI_UNDEFINED
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -41,9 +42,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -57,6 +60,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.maja.basicruler.ui.theme.BasicRulerTheme
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -65,18 +69,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val dpi = this.resources.configuration.densityDpi.takeIf { it != DENSITY_DPI_UNDEFINED } ?: 240
+        val dpi =
+            this.resources.configuration.densityDpi.takeIf { it != DENSITY_DPI_UNDEFINED } ?: 240
 
         setContent {
             BasicRulerTheme {
                 val context = LocalContext.current
                 val preferencesManager = remember { PreferencesManager(context) }
-                val prevCalibration = preferencesManager.getData(stringResource(R.string.correction_factor), stringResource(R.string.default_calibration_value)).toFloat()
+                val prevCalibration = preferencesManager.getData(
+                    stringResource(R.string.correction_factor),
+                    stringResource(R.string.default_calibration_value)
+                ).toFloat()
                 val currCalibration = remember { mutableStateOf(prevCalibration) }
-                val prevUnit = preferencesManager.getData(stringResource(R.string.unit), stringResource(R.string.default_unit))
+                val prevUnit = preferencesManager.getData(
+                    stringResource(R.string.unit),
+                    stringResource(R.string.default_unit)
+                )
                 val currUnit = remember { mutableStateOf(prevUnit) }
 
-                Surface(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
                     DrawTicks(dpi = dpi, factor = currCalibration, unit = currUnit)
                     DrawOptions(dpi = dpi, factor = currCalibration, unit = currUnit)
                 }
@@ -87,67 +102,85 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalTextApi::class)
 @Composable
-fun DrawTicks(dpi: Int, tickLength: Int = 30, vertical: Boolean = true, factor: MutableState<Float>, unit: MutableState<String>, offsetX: Float = 0f, offsetY: Float = 10f) {
+fun DrawTicks(
+    dpi: Int,
+    tickLength: Int = 30,
+    vertical: Boolean = true,
+    factor: MutableState<Float>,
+    unit: MutableState<String>,
+    offsetX: Float = 0f,
+    offsetY: Float = 10f
+) {
     val colorRect = MaterialTheme.colorScheme.primary
     val colorTicks = MaterialTheme.colorScheme.background
     val fontSize = MaterialTheme.typography.bodyLarge.fontSize
     val textMeasure = rememberTextMeasurer()
     val tickLength1 = tickLength * 0.7f
     val tickLength5 = tickLength * 0.8f
-    val unitDist = if (unit.value == stringResource(R.string.default_unit)) 2.54f else 1f
-    val mm = dpi.toFloat() * (1f / unitDist) / 10f * factor.value
-   // val portrait_mode = Configuration.ORIENTATION_PORTRAIT == LocalConfiguration.current.orientation
+    val mm = getDistance(factor, unit, dpi) / 10.0f
+    val landscapeMode =
+        Configuration.ORIENTATION_LANDSCAPE == LocalConfiguration.current.orientation
 
     Canvas(modifier = Modifier.fillMaxWidth()) {
         val strokeWidthMain = (tickLength / 20).dp.toPx()
         val strokeWidthIntermediate = (tickLength / 30).dp.toPx()
         val rectWidth = (tickLength * 2.5f).dp.toPx()
+        val ruleLength = if (landscapeMode) size.width else size.height
+        val mmNum = if (vertical) (ruleLength / mm).toInt() else (size.width / mm).toInt()
+        val rect = if (vertical) Size(rectWidth, ruleLength) else Size(size.width, rectWidth)
+        // translate and rotate if in landscape mode
+        withTransform({
+            if (vertical && landscapeMode) {
+                translate(left = 0f, top = size.height)
+                rotate(degrees = -90f, pivot = Offset(x = 0f, y = 0f))
+            }
+        }) {
+            drawRect(color = colorRect, size = rect, topLeft = Offset(offsetX, 0f))
 
-        val mmNum = if (vertical) (size.height / mm).toInt() else (size.width / mm).toInt()
-        val rect = if (vertical) Size(rectWidth, size.height) else Size(size.width, rectWidth)
+            for (distance in 0..mmNum) {
+                val y = mm * distance + offsetY
+                var start = Offset(x = offsetX, y = y)
+                var end: Offset
+                var stroke: Float
 
-        drawRect(color = colorRect, size = rect)
-
-        for (distance in 0..mmNum) {
-            val y = mm * distance + offsetY
-            var start = Offset(x = offsetX, y = y)
-            var end: Offset
-            var stroke: Float
-
-            if (distance % 10 == 0) {
-                end = start.copy(x = offsetX + tickLength.dp.toPx())
-                stroke = strokeWidthMain
-                // Draw the label
-                val textLayoutResult = textMeasure.measure(
-                    text = AnnotatedString((distance / 10).toString()),
-                    style = TextStyle(fontSize = fontSize, color = colorTicks)
-                )
-                val textSize = textLayoutResult.size
-                val topLeft = if (vertical) {
-                    Offset(-0.5f * textSize.width + distance * mm + offsetY, -0.5f * textSize.height - (1.5f * tickLength).dp.toPx())
-                } else {
-                    Offset(distance * mm + offsetY - 0.5f * textSize.width, (1.5f * tickLength).dp.toPx() - 0.5f * textSize.height)
-                }
-                if (vertical) {
-                    rotate(degrees = 90f, pivot = Offset(x = 0f, y = 0f)) {
+                if (distance % 10 == 0) {
+                    end = start.copy(x = offsetX + tickLength.dp.toPx())
+                    stroke = strokeWidthMain
+                    // Draw the label
+                    val textLayoutResult = textMeasure.measure(
+                        text = AnnotatedString((distance / 10).toString()),
+                        style = TextStyle(fontSize = fontSize, color = colorTicks)
+                    )
+                    val textSize = textLayoutResult.size
+                    val topLeft = if (vertical) {
+                        Offset(
+                            -0.5f * textSize.width + distance * mm + offsetY,
+                            -0.5f * textSize.height - (1.5f * tickLength).dp.toPx()
+                        )
+                    } else {
+                        Offset(
+                            distance * mm + offsetY - 0.5f * textSize.width,
+                            (1.5f * tickLength).dp.toPx() - 0.5f * textSize.height
+                        )
+                    }
+                    val degree = if (vertical) 90f else 0f
+                    rotate(degrees = degree, pivot = Offset(x = 0f, y = 0f)) {
                         drawText(textLayoutResult = textLayoutResult, topLeft = topLeft)
                     }
+                } else if (distance % 5 == 0) {
+                    end = start.copy(x = offsetX + tickLength5.dp.toPx())
+                    stroke = strokeWidthIntermediate
                 } else {
-                    drawText(textLayoutResult = textLayoutResult, topLeft = topLeft)
+                    end = start.copy(x = offsetX + tickLength1.dp.toPx())
+                    stroke = strokeWidthIntermediate
                 }
-            } else if (distance % 5 == 0) {
-                end = start.copy(x = offsetX + tickLength5.dp.toPx())
-                stroke = strokeWidthIntermediate
-            } else {
-                end = start.copy(x = offsetX + tickLength1.dp.toPx())
-                stroke = strokeWidthIntermediate
-            }
 
-            if (!vertical) {
-                end = Offset(x = end.y, y = end.x)
-                start = Offset(x = start.y, y = start.x)
+                if (!vertical) {
+                    end = Offset(x = end.y, y = end.x)
+                    start = Offset(x = start.y, y = start.x)
+                }
+                drawLine(start = start, end = end, color = colorTicks, strokeWidth = stroke)
             }
-            drawLine(start = start, end = end, color = colorTicks, strokeWidth = stroke)
         }
     }
 }
@@ -157,9 +190,10 @@ fun DrawOptions(dpi: Int, factor: MutableState<Float>, unit: MutableState<String
     val showSetting = remember { mutableStateOf(false) }
     val showSquareMeasure = remember { mutableStateOf(false) }
     val showLinealMeasure = remember { mutableStateOf(false) }
+
     // draw this on the bottom layer
     if (showSquareMeasure.value) {
-        ShowMeasure(factor, unit, dpi)
+        ShowSquareMeasure(factor, unit, dpi)
     }
     if (showLinealMeasure.value) {
         ShowLinealMeasure(factor, unit, dpi)
@@ -167,59 +201,104 @@ fun DrawOptions(dpi: Int, factor: MutableState<Float>, unit: MutableState<String
     if (showSetting.value) {
         ShowSettingDialog(factor, unit, showSetting, dpi)
     }
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Bottom, horizontalAlignment = Alignment.End) {
-        MeasureButton(
-            imageVector = ImageVector.vectorResource(id = R.drawable.lineal_meas),
-            isSelected = showLinealMeasure.value,
-            onClick = {
-                showLinealMeasure.value = !showLinealMeasure.value
-                showSquareMeasure.value = false
-            }
-        )
-        MeasureButton(
-            imageVector = ImageVector.vectorResource(id = R.drawable.square_meas),
-            isSelected = showSquareMeasure.value,
-            onClick = {
-                showSquareMeasure.value = !showSquareMeasure.value
-                showLinealMeasure.value = false
-            }
-        )
-        MeasureButton(
-            imageVector = Icons.Default.Settings,
-            isSelected = showSetting.value,
-            onClick = { showSetting.value = true }
-        )
+    if (Configuration.ORIENTATION_LANDSCAPE == LocalConfiguration.current.orientation) {
+        Row(
+            Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.Top
+        ) {
+            DrawButtons(showSquareMeasure, showLinealMeasure, showSetting)
+        }
+    } else {
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Bottom,
+            horizontalAlignment = Alignment.End
+        ) {
+            DrawButtons(showSquareMeasure, showLinealMeasure, showSetting)
+        }
     }
 }
 
 @Composable
-fun MeasureButton(imageVector: ImageVector, isSelected: Boolean, onClick: () -> Unit) {
-    val buttonColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary
+private fun MeasureButton(imageVector: ImageVector, isSelected: Boolean, onClick: () -> Unit) {
+    val buttonColor =
+        if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.primary
     Button(
         onClick = onClick,
-        modifier = Modifier.padding(10.dp).size(60.dp),
+        modifier = Modifier
+            .padding(10.dp)
+            .size(60.dp),
         shape = CircleShape,
         contentPadding = PaddingValues(0.dp),
         colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
     ) {
-        Icon(imageVector, contentDescription = "Measure", Modifier.size(40.dp), tint = MaterialTheme.colorScheme.background)
+        Icon(
+            imageVector,
+            contentDescription = "Measure",
+            Modifier.size(40.dp),
+            tint = MaterialTheme.colorScheme.background
+        )
     }
+}
+
+@Composable
+private fun DrawButtons(
+    showSquareMeasure: MutableState<Boolean>,
+    showLinealMeasure: MutableState<Boolean>,
+    showSetting: MutableState<Boolean>
+) {
+    MeasureButton(
+        imageVector = ImageVector.vectorResource(id = R.drawable.lineal_meas),
+        isSelected = showLinealMeasure.value,
+        onClick = {
+            showLinealMeasure.value = !showLinealMeasure.value
+            showSquareMeasure.value = false
+        }
+    )
+    MeasureButton(
+        imageVector = ImageVector.vectorResource(id = R.drawable.square_meas),
+        isSelected = showSquareMeasure.value,
+        onClick = {
+            showSquareMeasure.value = !showSquareMeasure.value
+            showLinealMeasure.value = false
+        }
+    )
+    MeasureButton(
+        imageVector = Icons.Default.Settings,
+        isSelected = showSetting.value,
+        onClick = { showSetting.value = true }
+    )
+}
+
+@Composable
+private fun getDistance(factor: MutableState<Float>, unit: MutableState<String>, dpi: Int): Float {
+    val defaultUnit = stringResource(R.string.default_unit)
+    val unitDist = if (unit.value == defaultUnit) 2.54f else 1f
+    return dpi.toFloat() * (1f / unitDist) * factor.value
 }
 
 @OptIn(ExperimentalTextApi::class)
 @Composable
-private fun ShowMeasure(factor: MutableState<Float>, unit: MutableState<String>, dpi: Int) {
+private fun ShowSquareMeasure(factor: MutableState<Float>, unit: MutableState<String>, dpi: Int) {
     val color = MaterialTheme.colorScheme.secondary.copy(0.85f)
-    val defaultUnit = stringResource(R.string.default_unit)
-    val unitDist = if (unit.value == defaultUnit) 2.54f else 1f
-    val offset = dpi.toFloat() * (1f / unitDist) * factor.value
+    val offset = getDistance(factor, unit, dpi)
+    val minSize = 0.1f * offset
     val offsetY = 10f
     val txtColor = MaterialTheme.colorScheme.primary
-    val measDimension = if (unit.value == defaultUnit) 2f * offset else offset
+    val measDimension = offset * if (unit.value == stringResource(R.string.default_unit)) 2f else 1f
     val dim = remember { mutableStateOf(Size(measDimension, measDimension)) }
-    val center = remember { mutableStateOf(Offset(measDimension + 0.5f * dim.value.width, measDimension + offsetY + 0.5f * dim.value.height)) }
+    val center = remember {
+        mutableStateOf(
+            Offset(
+                measDimension + 0.5f * dim.value.width,
+                measDimension + offsetY + 0.5f * dim.value.height
+            )
+        )
+    }
     val textMeasure = rememberTextMeasurer()
     val fontSize = MaterialTheme.typography.labelLarge.fontSize
+    val isLandscape = Configuration.ORIENTATION_LANDSCAPE == LocalConfiguration.current.orientation
 
     Canvas(modifier = Modifier
         .fillMaxSize()
@@ -231,18 +310,19 @@ private fun ShowMeasure(factor: MutableState<Float>, unit: MutableState<String>,
                     (center.value.x - currPos.x).pow(2) + (center.value.y - currPos.y).pow(2)
                 )
                 val resizeThreshold = min(100f, 0.5f * (dim.value.width + dim.value.height))
-
+                // drag & drop
                 if (radius < resizeThreshold) {
                     center.value += delta
-                }
-                else if (abs(delta.x) > abs(delta.y)) { // movement is in x-direction
+                } else if (abs(delta.x) > abs(delta.y)) { // movement is in x-direction
                     val sign = if (currPos.x > center.value.x) 1.0f else -1.0f
                     center.value = center.value.copy(x = center.value.x + 0.5f * delta.x)
-                    dim.value = dim.value.copy(width = dim.value.width + sign * delta.x)
+                    dim.value =
+                        dim.value.copy(width = max(minSize, dim.value.width + sign * delta.x))
                 } else { // movement is in y direction
                     val sign = if (currPos.y < center.value.y) -1.0f else 1.0f
                     center.value = center.value.copy(y = center.value.y + 0.5f * delta.y)
-                    dim.value = dim.value.copy(height = dim.value.height + sign * delta.y)
+                    dim.value =
+                        dim.value.copy(height = max(minSize, dim.value.height + sign * delta.y))
                 }
             }
         }) {
@@ -274,19 +354,34 @@ private fun ShowMeasure(factor: MutableState<Float>, unit: MutableState<String>,
         val w = dim.value.width / offset
         val h = dim.value.height / offset
         val textLayoutResult = textMeasure.measure(
-            text = String.format("%.2f x %.2f %s\n%.2f %s\u00B2", w, h, unit.value, w*h, unit.value),
-            style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right))
-        drawText(
-            textLayoutResult = textLayoutResult,
-            topLeft = Offset(
-                x = size.width - textLayoutResult.size.width - 20.dp.toPx(),
-                y = 10f
+            text = String.format(
+                "%.2f x %.2f %s\n%.2f %s\u00B2",
+                w,
+                h,
+                unit.value,
+                w * h,
+                unit.value
             ),
-            color = txtColor
-
+            style = TextStyle(
+                fontSize = fontSize,
+                color = color,
+                textAlign = if (isLandscape) TextAlign.Left else TextAlign.Right
+            )
         )
+        val topLeft = Offset(
+            x = if (isLandscape) 20.dp.toPx() else size.width - textLayoutResult.size.width - 20.dp.toPx(),
+            y = 10.dp.toPx()
+        )
+        drawText(textLayoutResult = textLayoutResult, topLeft = topLeft, color = txtColor)
         // draw measure rectangle
-        drawRect(color = color, size = dim.value, topLeft = Offset(center.value.x - 0.5f * dim.value.width, center.value.y - 0.5F * dim.value.height))
+        drawRect(
+            color = color,
+            size = dim.value,
+            topLeft = Offset(
+                center.value.x - 0.5f * dim.value.width,
+                center.value.y - 0.5F * dim.value.height
+            )
+        )
     }
 }
 
@@ -294,69 +389,76 @@ private fun ShowMeasure(factor: MutableState<Float>, unit: MutableState<String>,
 @Composable
 private fun ShowLinealMeasure(factor: MutableState<Float>, unit: MutableState<String>, dpi: Int) {
     val color = MaterialTheme.colorScheme.secondary.copy(0.85f)
-    val unitDist = if (unit.value == stringResource(R.string.default_unit)) 2.54f else 1f
-    val offset = dpi.toFloat() * (1f / unitDist) * factor.value
+    val offset = getDistance(factor, unit, dpi)
+    val measDimension = offset * if (unit.value == stringResource(R.string.default_unit)) 2f else 1f
+    val minWidth = .1f * offset
     val offsetY = 10f
-    val txtColor = MaterialTheme.colorScheme.primary
-    val measDimension = if (unit.value == stringResource(R.string.default_unit)) 2f*offset else offset
-    val dim = remember { mutableStateOf(Size(width = measDimension, height = measDimension)) }
-    val center = remember { mutableStateOf(Offset(x = measDimension + dim.value.width/2f, y = measDimension+offsetY + dim.value.height/2f)) }
+    val isLandscape = Configuration.ORIENTATION_LANDSCAPE == LocalConfiguration.current.orientation
+    val width = remember { mutableStateOf(measDimension) }
+    val centerPos = remember { mutableStateOf(1.5f * width.value + offsetY) }
     val textMeasure = rememberTextMeasurer()
+    val txtColor = MaterialTheme.colorScheme.primary
     val fontSize = MaterialTheme.typography.labelLarge.fontSize
 
     Canvas(modifier = Modifier
         .fillMaxSize()
-        .onSizeChanged {
-            dim.value = Size(width = it.width.toFloat(), height = dim.value.height)
-            center.value = Offset(x = dim.value.width / 2f, y = center.value.y)
-        }
         .pointerInput(key1 = Unit) {
             detectDragGestures(
                 onDrag = { change, delta ->
-                    val currPos = change.position
-                    if (abs(delta.x) < abs(delta.y)) { // movement is in y direction
-                        // resize rectangle on top side
-                        val sign = if (currPos.y < center.value.y) -1.0f else 1.0f
-                        center.value = center.value.copy(y = center.value.y + 0.5f * delta.y)
-                        dim.value = dim.value.copy(height = dim.value.height + sign * delta.y)
+                    val _change = if (isLandscape) change.position.x else change.position.y
+                    val _delta = if (isLandscape) delta.x else delta.y
+                    val sign = if (_change < centerPos.value) -1.0f else 1.0f
+                    var newWidth = width.value + sign * _delta
+                    if (newWidth > minWidth) {
+                        val maxSize = if (isLandscape) size.width else size.height
+                        var newCenter = centerPos.value + 0.5f * _delta
+                        val lowerOverflow = newCenter - 0.5f * newWidth
+                        val upperOverflow = newCenter + 0.5f * newWidth - maxSize
+                        if (lowerOverflow < 0) {
+                            newWidth -= abs(lowerOverflow)
+                            newCenter += 0.5f * abs(lowerOverflow)
+                        }
+                        if (upperOverflow > 0) {
+                            newWidth -= upperOverflow
+                            newCenter -= 0.5f * upperOverflow
+                        }
+                        centerPos.value = newCenter
+                        width.value = newWidth
                     }
                 }
             )
         }) {
-        // if negative the rect is overhanging on the top side
-        val dYT = center.value.y - 0.5f * dim.value.height
-        if (dYT < 0) {
-            center.value = Offset(x = center.value.x, y = center.value.y + abs(dYT)/2f)
-            dim.value = Size(width = dim.value.width, height = dim.value.height - abs(dYT))
-        }
-        // if negative the rect is overhanging on the bottom side
-        val dYB = size.height - (center.value.y + 0.5f * dim.value.height)
-        if (dYB < 0) {
-            center.value = Offset(x = center.value.x, y = center.value.y - abs(dYB)/2f)
-            dim.value = Size(width = dim.value.width, height = dim.value.height - abs(dYB))
-        }
 
-        // draw size of rectangle
         val textLayoutResult = textMeasure.measure(
-            text = String.format("%.2f %s", dim.value.height / offset, unit.value),
-            style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right))
-        val textSize = textLayoutResult.size
-        drawText(
-            textLayoutResult = textLayoutResult,
-            topLeft = Offset(
-                x = size.width - textSize.width - 20.dp.toPx(),
-                y = 10f
-            ),
-            color = txtColor
-
+            text = String.format("%.2f %s", width.value / offset, unit.value),
+            style = TextStyle(fontSize = fontSize, color = color, textAlign = TextAlign.Right)
         )
-        // draw measure rectangle
-        drawRect(color = color, size = dim.value, topLeft = Offset(x = center.value.x - dim.value.width/2f, y = center.value.y - dim.value.height/2f))
+        val topLeft = Offset(
+            x = if (isLandscape) 20.dp.toPx() else size.width - textLayoutResult.size.width - 20.dp.toPx(),
+            y = 10.dp.toPx()
+        )
+        drawText(textLayoutResult = textLayoutResult, topLeft = topLeft, color = txtColor)
+        if (isLandscape) {
+            drawRect(
+                color = color, size = Size(width = width.value, height = size.height),
+                topLeft = Offset(x = centerPos.value - 0.5f * width.value, y = 0f)
+            )
+        } else {
+            drawRect(
+                color = color, size = Size(width = size.width, height = width.value),
+                topLeft = Offset(x = 0f, y = centerPos.value - 0.5f * width.value)
+            )
+        }
     }
 }
 
 @Composable
-private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: MutableState<String>, showDialog: MutableState<Boolean>, dpi: Int) {
+private fun ShowSettingDialog(
+    currFactor: MutableState<Float>,
+    currUnit: MutableState<String>,
+    showDialog: MutableState<Boolean>,
+    dpi: Int
+) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context) }
     val keyCalibration = stringResource(R.string.correction_factor)
@@ -374,14 +476,20 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
         },
         title = { Text(text = "Calibration") },
         text = {
-            Column (horizontalAlignment = Alignment.End, modifier = Modifier.padding(0.dp)) {
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(0.dp)) {
                 val tickLength = 30
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height((tickLength * 2.5f).dp)
                 ) {
-                    DrawTicks(dpi = dpi, tickLength = tickLength, vertical = false, factor = currFactor, unit = currUnit)
+                    DrawTicks(
+                        dpi = dpi,
+                        tickLength = tickLength,
+                        vertical = false,
+                        factor = currFactor,
+                        unit = currUnit
+                    )
                 }
                 Slider(
                     modifier = Modifier.padding(0.dp),
@@ -392,8 +500,13 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
                 Row(
                     Modifier
                         .padding(0.dp)
-                        .wrapContentHeight()) {
-                    Text(text = String.format("Calibration Factor: %.2f", currFactor.value), fontSize = fontSize, modifier = Modifier.align(Alignment.CenterVertically))
+                        .wrapContentHeight()
+                ) {
+                    Text(
+                        text = String.format("Calibration Factor: %.2f", currFactor.value),
+                        fontSize = fontSize,
+                        modifier = Modifier.align(Alignment.CenterVertically)
+                    )
                     IconButton(onClick = { currFactor.value = 1f }) {
                         Icon(
                             Icons.Filled.Refresh,
@@ -404,14 +517,18 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
                     }
                 }
                 Row {
-                    Text(text = String.format("Unit: %s", currUnit.value), fontSize = fontSize, modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .padding(10.dp, 0.dp))
+                    Text(
+                        text = String.format("Unit: %s", currUnit.value),
+                        fontSize = fontSize,
+                        modifier = Modifier
+                            .align(Alignment.CenterVertically)
+                            .padding(10.dp, 0.dp)
+                    )
 
                     Switch(
-                        checked = currUnit.value == prevUnit,
+                        checked = currUnit.value == "cm",
                         onCheckedChange = {
-                            currUnit.value = if (it) prevUnit else "inch"
+                            currUnit.value = if (it) "cm" else "inch"
                         }
                     )
                 }
@@ -444,7 +561,11 @@ private fun ShowSettingDialog(currFactor: MutableState<Float>, currUnit: Mutable
     )
 }
 
-@Preview(showBackground = true)
+@Preview(
+    showBackground = true,
+    showSystemUi = true,
+    device = "spec:width=411dp,height=891dp,dpi=420,isRound=false,chinSize=0dp,orientation=landscape"
+)
 @Composable
 fun RulerPreview() {
     BasicRulerTheme {
@@ -453,7 +574,7 @@ fun RulerPreview() {
         val unit = remember { mutableStateOf("cm") }
         DrawTicks(420, tickLength = 30, factor = factor, vertical = true, unit = unit)
         DrawOptions(factor = factor, dpi = 420, unit = unit)
-        ShowSettingDialog(currFactor = factor, currUnit = unit, dpi = 420, showDialog =  showDialog)
+        ShowSettingDialog(currFactor = factor, currUnit = unit, dpi = 420, showDialog = showDialog)
         ShowLinealMeasure(factor = factor, unit = unit, dpi = 420)
     }
 }
